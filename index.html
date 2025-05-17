@@ -64,11 +64,8 @@
                 background_color: '#000000',
                 trails: false,
                 trailOpacity: 0.1,
-                stats: true
-            },
-            export: {
-                image: () => {const imageDataURL = canvas.toDataURL({format: 'png', quality: 1});dataURL_downloader(imageDataURL);},
-                video: () => {mediaRecorder.state == 'recording' ? mediaRecorder.stop() : mediaRecorder.start();},
+                stats: true,
+                smoothAnimations: false
             },
             explore: false,
             explorePeriod: 100,
@@ -89,19 +86,87 @@
             pause: false,
             mouseAttraction: 0,
             mouseRadius: 100,
-            fullscreen: false
+            fullscreen: false,
+            addColor: () => {if(settings.numColors < 7) {settings.numColors++; setNumberOfColors(); startRandom();}},
+            removeColor: () => {if(settings.numColors > 1) {settings.numColors--; setNumberOfColors(); startRandom();}},
+            tools: {
+                add: false,
+                remove: false,
+                move: false,
+                currentTool: 'none'
+            },
+            presets: {
+                basicAttract: () => {applyPreset('basicAttract')},
+                basicRepel: () => {applyPreset('basicRepel')},
+                mixed: () => {applyPreset('mixed')},
+                symmetric: () => {applyPreset('symmetric')}
+            }
         }
 
         const setupClicks = () => {
             canvas.addEventListener('click', (e) => {
-                pulse = settings.pulseDuration;
-                if (e.shiftKey) pulse = -pulse;
-                pulse_x = e.clientX;
-                pulse_y = e.clientY;
+                if (settings.tools.add) {
+                    const rect = canvas.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    const colorIndex = Math.floor(Math.random() * settings.numColors);
+                    atoms.push([x, y, 0, 0, colorIndex]);
+                } else if (settings.tools.remove) {
+                    const rect = canvas.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    let closestIndex = -1;
+                    let minDist = 100;
+                    for (let i = 0; i < atoms.length; i++) {
+                        const dx = atoms[i][0] - x;
+                        const dy = atoms[i][1] - y;
+                        const dist = Math.sqrt(dx*dx + dy*dy);
+                        if (dist < minDist) {
+                            minDist = dist;
+                            closestIndex = i;
+                        }
+                    }
+                    if (closestIndex >= 0) {
+                        atoms.splice(closestIndex, 1);
+                    }
+                } else if (settings.tools.move) {
+                    const rect = canvas.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    let closestIndex = -1;
+                    let minDist = 100;
+                    for (let i = 0; i < atoms.length; i++) {
+                        const dx = atoms[i][0] - x;
+                        const dy = atoms[i][1] - y;
+                        const dist = Math.sqrt(dx*dx + dy*dy);
+                        if (dist < minDist) {
+                            minDist = dist;
+                            closestIndex = i;
+                        }
+                    }
+                    if (closestIndex >= 0) {
+                        movingAtom = closestIndex;
+                    }
+                } else {
+                    pulse = settings.pulseDuration;
+                    if (e.shiftKey) pulse = -pulse;
+                    pulse_x = e.clientX;
+                    pulse_y = e.clientY;
+                }
             });
             canvas.addEventListener('mousemove', (e) => {
                 mouseX = e.clientX;
                 mouseY = e.clientY;
+                if (movingAtom >= 0) {
+                    const rect = canvas.getBoundingClientRect();
+                    atoms[movingAtom][0] = e.clientX - rect.left;
+                    atoms[movingAtom][1] = e.clientY - rect.top;
+                    atoms[movingAtom][2] = 0;
+                    atoms[movingAtom][3] = 0;
+                }
+            });
+            canvas.addEventListener('mouseup', () => {
+                movingAtom = -1;
             });
             document.getElementById('fullscreenBtn').addEventListener('click', toggleFullscreen);
         }
@@ -141,7 +206,8 @@
             configFolder.add(settings, 'reset').name('Reset');
             configFolder.add(settings, 'randomRules').name('Random Rules');
             configFolder.add(settings, 'symmetricRules').name('Symmetric Rules');
-            configFolder.add(settings, 'numColors', 1, 7, 1).name('Number of Colors').listen().onFinishChange(v => {setNumberOfColors(); startRandom();});
+            configFolder.add(settings, 'addColor').name('Add Color');
+            configFolder.add(settings, 'removeColor').name('Remove Color');
             configFolder.add(settings, 'seed').name('Seed').listen().onFinishChange(v => {startRandom();});
             configFolder.add(settings, 'fps').name('FPS - (Live)').listen().disable();
             configFolder.add(settings.atoms, 'count', 1, 1000, 1).name('Atoms per-color').listen().onFinishChange(v => {randomAtoms(v, true)});
@@ -163,11 +229,25 @@
             drawingsFolder.add(settings.drawings, 'trails').name('Enable Trails').listen();
             drawingsFolder.add(settings.drawings, 'trailOpacity', 0.01, 0.5, 0.01).name('Trail Opacity').listen();
             drawingsFolder.add(settings.drawings, 'stats').name('Show Stats').listen();
+            drawingsFolder.add(settings.drawings, 'smoothAnimations').name('Smooth Animations').listen();
             drawingsFolder.addColor(settings.drawings, 'background_color').name('Background Color').listen();
 
-            const exportFolder = settings.gui.addFolder('Export');
-            exportFolder.add(settings.export, 'image').name('Image');
-            exportFolder.add(settings.export, 'video').name('Video: Start / stop');
+            const toolsFolder = settings.gui.addFolder('Tools');
+            toolsFolder.add(settings.tools, 'add').name('Add Atoms').listen().onChange(v => {
+                if (v) {settings.tools.remove = false; settings.tools.move = false;}
+            });
+            toolsFolder.add(settings.tools, 'remove').name('Remove Atoms').listen().onChange(v => {
+                if (v) {settings.tools.add = false; settings.tools.move = false;}
+            });
+            toolsFolder.add(settings.tools, 'move').name('Move Atoms').listen().onChange(v => {
+                if (v) {settings.tools.add = false; settings.tools.remove = false;}
+            });
+
+            const presetsFolder = settings.gui.addFolder('Presets');
+            presetsFolder.add(settings.presets, 'basicAttract').name('Basic Attract');
+            presetsFolder.add(settings.presets, 'basicRepel').name('Basic Repel');
+            presetsFolder.add(settings.presets, 'mixed').name('Mixed');
+            presetsFolder.add(settings.presets, 'symmetric').name('Symmetric');
 
             for (const atomColor of settings.colors) {
                 const colorFolder = settings.gui.addFolder(`Rules: <font color='${atomColor}'>${atomColor.capitalise()}</font>`);
@@ -180,6 +260,41 @@
                 colorFolder.add(settings.particleProps[atomColor], 'radius', 1, 10, 0.5).name('Particle Size').listen();
                 colorFolder.add(settings.particleProps[atomColor], 'speed', 0.1, 2, 0.1).name('Speed Factor').listen();
             }
+        }
+
+        function applyPreset(presetName) {
+            switch(presetName) {
+                case 'basicAttract':
+                    for (const i of settings.colors) {
+                        for (const j of settings.colors) {
+                            settings.rules[i][j] = 0.5;
+                        }
+                        settings.radii[i] = 100;
+                    }
+                    break;
+                case 'basicRepel':
+                    for (const i of settings.colors) {
+                        for (const j of settings.colors) {
+                            settings.rules[i][j] = -0.5;
+                        }
+                        settings.radii[i] = 100;
+                    }
+                    break;
+                case 'mixed':
+                    for (const i of settings.colors) {
+                        for (const j of settings.colors) {
+                            settings.rules[i][j] = Math.random() * 2 - 1;
+                        }
+                        settings.radii[i] = 50 + Math.random() * 100;
+                    }
+                    break;
+                case 'symmetric':
+                    symmetricRules();
+                    break;
+            }
+            flattenRules();
+            randomAtoms(settings.atoms.count, true);
+            updateGUIDisplay();
         }
 
         var local_seed = settings.seed;
@@ -441,6 +556,7 @@
         var pulse = 0;
         var pulse_x = 0, pulse_y = 0;
         var mouseX = 0, mouseY = 0;
+        var movingAtom = -1;
         var exploration_timer = 0;
         function exploreParameters() {
             if (exploration_timer <= 0) {
@@ -596,35 +712,16 @@
             var curT = Date.now();
             if (curT > lastT) {
                 const new_fps = 1000. / (curT - lastT);
-                settings.fps = Math.round(settings.fps * 0.8 + new_fps * 0.2);
+                if (settings.drawings.smoothAnimations) {
+                    settings.fps = Math.round(settings.fps * 0.8 + new_fps * 0.2);
+                } else {
+                    settings.fps = Math.round(new_fps);
+                }
                 lastT = curT;
             }
-            if (total_v > 30. && settings.time_scale > 5.) settings.time_scale /= 1.1;
-            if (settings.time_scale < 0.9) settings.time_scale *= 1.01;
-            if (settings.time_scale > 1.1) settings.time_scale /= 1.01;
             if (pulse != 0) pulse -= (pulse > 0) ? 1 : -1;
             if (settings.explore) exploreParameters();
         }
-
-        function dataURL_downloader(dataURL, name = `particle_life_${settings.seed}`) {
-            const hyperlink = document.createElement("a");
-            hyperlink.download = name;
-            hyperlink.target = '_blank';
-            hyperlink.href = dataURL;
-            hyperlink.click();
-            hyperlink.remove();
-        };
-
-        const videoStream = canvas.captureStream();
-        const mediaRecorder = new MediaRecorder(videoStream);
-        let chunks = [];
-        mediaRecorder.ondataavailable = function (e) { chunks.push(e.data); };
-        mediaRecorder.onstop = function (e) {
-            const blob = new Blob(chunks, { 'type': 'video/mp4' });
-            const videoDataURL = URL.createObjectURL(blob);
-            dataURL_downloader(videoDataURL);
-            chunks = [];
-        };
     </script>
 </body>
 </html>
