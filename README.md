@@ -2,7 +2,7 @@
 
 VoidAtom is an interactive particle simulation inspired by particle life algorithms. It creates colorful atoms that interact based on customizable rules, forming dynamic clusters and patterns.
 
-![VoidAtom Screenshot](https://via.placeholder.com/800x500/111111/cccccc?text=VoidAtom+Simulation)
+![VoidAtom Screenshot](https://raw.githubusercontent.com/Sacrafex/VoidAtom/refs/heads/main/img/Screenshot.png)
 
 ## Features
 
