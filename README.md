@@ -35,6 +35,7 @@ VoidAtom is an interactive particle simulation inspired by particle life algorit
 - `O`: Reset particles
 - `S`: Make rules symmetric
 - `P`: Pause simulation
+- `F`: Toggle Fullscreen
 - `Space`: Randomize particle positions
 
 ## Technical Details
