@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html>
-<title>VoidAtom</title>
+<title>VoidAtom - Enhanced Collisions</title>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
@@ -12,6 +12,7 @@
             margin: 0;
             overflow: hidden;
             background: #111;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
         #canvas {
             border: none;
@@ -29,6 +30,7 @@
             background: rgba(0,0,0,0.5);
             padding: 5px;
             border-radius: 3px;
+            z-index: 10;
         }
         #fullscreenBtn {
             position: absolute;
@@ -41,12 +43,24 @@
             border-radius: 3px;
             cursor: pointer;
             font-family: monospace;
+            z-index: 10;
+        }
+        .feature-tag {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: #aaa;
+            font-size: 12px;
+            background: rgba(0,0,0,0.3);
+            padding: 4px 8px;
+            border-radius: 3px;
         }
     </style>
 </head>
 <body>
     <div class="stats" id="stats"></div>
     <button id="fullscreenBtn">Fullscreen</button>
+    <div class="feature-tag">New Features: Real Collisions • Interaction Radius Visualization</div>
     <canvas id="canvas" tabindex="1"></canvas>
     <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.17"></script>
     <script>
@@ -67,7 +81,13 @@
                 trails: false,
                 trailOpacity: 0.1,
                 stats: true,
-                smoothAnimations: false
+                smoothAnimations: false,
+                showInteractionRadius: false
+            },
+            physics: {
+                collisions: true,
+                collisionDamping: 0.9,
+                wallDamping: 0.8
             },
             explore: false,
             explorePeriod: 100,
@@ -149,6 +169,16 @@
             m.closePath();
             m.strokeStyle = m.fillStyle = color;
             fill ? m.fill() : m.stroke();
+        };
+
+        const drawInteractionRadius = (x, y, color, radius) => {
+            m.beginPath();
+            m.arc(x, y, radius, 0, 2 * Math.PI);
+            m.strokeStyle = color;
+            m.lineWidth = 0.5;
+            m.globalAlpha = 0.4;
+            m.stroke();
+            m.globalAlpha = 1.0;
         };
 
         const drawLineBetweenAtoms = (ax, ay, bx, by, color) => {
@@ -418,6 +448,75 @@
                 }
             }
         };
+        
+        const resolveCollisions = () => {
+            if (!settings.physics.collisions) return;
+            
+            for (const a of atoms) {
+                const radius = settings.particleProps[settings.colors[a[4]]].radius;
+                
+                if (a[0] < radius) {
+                    a[0] = radius;
+                    a[2] = -a[2] * settings.physics.wallDamping;
+                }
+
+                if (a[0] > canvas.width - radius) {
+                    a[0] = canvas.width - radius;
+                    a[2] = -a[2] * settings.physics.wallDamping;
+                }
+
+                if (a[1] < radius) {
+                    a[1] = radius;
+                    a[3] = -a[3] * settings.physics.wallDamping;
+                }
+
+                if (a[1] > canvas.height - radius) {
+                    a[1] = canvas.height - radius;
+                    a[3] = -a[3] * settings.physics.wallDamping;
+                }
+            }
+
+            for (let i = 0; i < atoms.length; i++) {
+                const a = atoms[i];
+                const r1 = settings.particleProps[settings.colors[a[4]]].radius;
+                
+                for (let j = i + 1; j < atoms.length; j++) {
+                    const b = atoms[j];
+                    const r2 = settings.particleProps[settings.colors[b[4]]].radius;
+                    
+                    const dx = b[0] - a[0];
+                    const dy = b[1] - a[1];
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const minDistance = r1 + r2;
+
+                    if (distance < minDistance && distance > 0) {
+                        const nx = dx / distance;
+                        const ny = dy / distance;
+
+                        const overlap = minDistance - distance;
+                        const moveX = nx * overlap * 0.5;
+                        const moveY = ny * overlap * 0.5;
+                        
+                        a[0] -= moveX;
+                        a[1] -= moveY;
+                        b[0] += moveX;
+                        b[1] += moveY;
+
+                        const dvx = b[2] - a[2];
+                        const dvy = b[3] - a[3];
+
+                        const impulse = 2 * (dvx * nx + dvy * ny) / (minDistance);
+                        const impulseX = impulse * nx * settings.physics.collisionDamping;
+                        const impulseY = impulse * ny * settings.physics.collisionDamping;
+
+                        a[2] += impulseX;
+                        a[3] += impulseY;
+                        b[2] -= impulseX;
+                        b[3] -= impulseY;
+                    }
+                }
+            }
+        };
 
         const applyRules = (timeStep = 1) => {
             total_v = 0;
@@ -487,10 +586,6 @@
             for (const a of atoms) {
                 a[0] += a[2];
                 a[1] += a[3];
-                if (a[0] < 0) { a[0] = -a[0]; a[2] *= -1; }
-                if (a[0] >= canvas.width) { a[0] = 2 * canvas.width - a[0]; a[2] *= -1; }
-                if (a[1] < 0) { a[1] = -a[1]; a[3] *= -1; }
-                if (a[1] >= canvas.height) { a[1] = 2 * canvas.height - a[1]; a[3] *= -1; }
             }
 
             total_v /= atoms.length;
@@ -633,6 +728,8 @@
                     case 'p': settings.pause = !settings.pause; break;
                     case ' ': randomAtoms(settings.atoms.count, false); break;
                     case 'f': toggleFullscreen(); break;
+                    case 'c': settings.physics.collisions = !settings.physics.collisions; break;
+                    case 'i': settings.drawings.showInteractionRadius = !settings.drawings.showInteractionRadius; break;
                 }
             });
         };
@@ -673,6 +770,11 @@
             configFolder.add(settings, 'preCalculate').name('Pre-calculate').listen();
             configFolder.add(settings, 'fullscreen').name('Fullscreen').listen().onChange(toggleFullscreen);
 
+            const physicsFolder = settings.gui.addFolder('Physics');
+            physicsFolder.add(settings.physics, 'collisions').name('Enable Collisions').listen();
+            physicsFolder.add(settings.physics, 'collisionDamping', 0.5, 1, 0.01).name('Collision Damping').listen();
+            physicsFolder.add(settings.physics, 'wallDamping', 0.5, 1, 0.01).name('Wall Damping').listen();
+
             const drawingsFolder = settings.gui.addFolder('Drawings');
             drawingsFolder.add(settings.drawings, 'circle').name('Circle Shape').listen();
             drawingsFolder.add(settings.drawings, 'clusters').name('Track Clusters').listen();
@@ -681,6 +783,7 @@
             drawingsFolder.add(settings.drawings, 'trailOpacity', 0.01, 0.5, 0.01).name('Trail Opacity').listen();
             drawingsFolder.add(settings.drawings, 'stats').name('Show Stats').listen();
             drawingsFolder.add(settings.drawings, 'smoothAnimations').name('Smooth Animations').listen();
+            drawingsFolder.add(settings.drawings, 'showInteractionRadius').name('Show Interaction Radius').listen();
             drawingsFolder.addColor(settings.drawings, 'background_color').name('Background Color').listen();
 
             const toolsFolder = settings.gui.addFolder('Tools');
@@ -775,6 +878,16 @@
                     applyRules();
                 }
 
+                resolveCollisions();
+
+                if (settings.drawings.showInteractionRadius) {
+                    for (const a of atoms) {
+                        const color = settings.colors[a[4]];
+                        const interactionRadius = settings.radii[color];
+                        drawInteractionRadius(a[0], a[1], color, interactionRadius);
+                    }
+                }
+
                 for (const a of atoms) {
                     const color = settings.colors[a[4]];
                     const radius = settings.particleProps[color].radius;
@@ -792,7 +905,8 @@
 
                 if (settings.drawings.stats) {
                     const precalcInfo = precalcFrames > 0 ? ` | Precalc: ${precalcFrames}` : '';
-                    statsElement.textContent = `FPS: ${settings.fps} | Atoms: ${atoms.length} | Clusters: ${clusters.filter(c => c[2] > 0).length}${precalcInfo}`;
+                    const collisionStatus = settings.physics.collisions ? 'ON' : 'OFF';
+                    statsElement.textContent = `FPS: ${settings.fps} | Atoms: ${atoms.length} | Clusters: ${clusters.filter(c => c[2] > 0).length} | Collisions: ${collisionStatus}${precalcInfo}`;
                     statsElement.style.display = 'block';
                 } else {
                     statsElement.style.display = 'none';
